@@ -258,6 +258,22 @@ export const updateEvent = async (req, res) => {
   }
 };
 
+export const getMyEvents = async (req, res, next) => {
+  try {
+    const events = await Event.find({
+      creatorId: req.user.id,
+    }).sort({ date: 1 });
+
+    res.status(200).json({
+      success: true,
+      events,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+
 // Delete Event - Owner only
 export const deleteEvent = async (req, res) => {
   try {
