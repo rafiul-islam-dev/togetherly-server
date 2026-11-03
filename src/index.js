@@ -9,6 +9,8 @@ import mongoose from "mongoose";
 import connectDB from "./config/db.js";
 import eventRoutes from "./routes/eventRoutes.js";
 
+import joinRoutes from "./routes/joinRoutes.js";
+
 dotenv.config();
 
 const app = express();
@@ -44,6 +46,9 @@ app.get("/api/health", (req, res) => {
 
 // Event routes
 app.use("/api/events", eventRoutes);
+
+// Event joining routes
+app.use("/api/joins", joinRoutes);
 
 // 404 handler
 app.use((req, res) => {
