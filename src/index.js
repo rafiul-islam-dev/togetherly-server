@@ -1,4 +1,4 @@
-
+import { notFound, errorHandler } from "./middleware/errorMiddleware.js";
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -49,6 +49,9 @@ app.use("/api/events", eventRoutes);
 
 // Event joining routes
 app.use("/api/joins", joinRoutes);
+
+app.use(notFound);
+app.use(errorHandler);
 
 // 404 handler
 app.use((req, res) => {
