@@ -1,6 +1,12 @@
 
 import mongoose from "mongoose";
 import Event from "../models/Event.js";
+import EventJoin from "../models/EventJoin.js";
+
+// Escape special characters in search input
+const escapeRegex = (value) => {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+};
 
 // Create a new event
 export const createEvent = async (req, res) => {
@@ -62,15 +68,80 @@ export const createEvent = async (req, res) => {
   }
 };
 
-// Get all upcoming events
+// Get upcoming events with search, category filter and pagination
 export const getUpcomingEvents = async (req, res) => {
   try {
-    const events = await Event.find({
+    const {
+      search = "",
+      category = "",
+      page = "1",
+      limit = "6",
+    } = req.query;
+
+    const pageNumber = Number(page);
+    const limitNumber = Number(limit);
+
+    if (
+      !Number.isInteger(pageNumber) ||
+      !Number.isInteger(limitNumber) ||
+      pageNumber < 1 ||
+      limitNumber < 1 ||
+      limitNumber > 50
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid page or limit. Limit must be between 1 and 50.",
+      });
+    }
+
+    const filter = {
       date: { $gt: new Date() },
-    }).sort({ date: 1 });
+    };
+
+    if (typeof category === "string" && category.trim()) {
+      filter.category = {
+        $regex: `^${escapeRegex(category.trim())}$`,
+        $options: "i",
+      };
+    }
+
+    if (typeof search === "string" && search.trim()) {
+      const searchRegex = {
+        $regex: escapeRegex(search.trim()),
+        $options: "i",
+      };
+
+      filter.$or = [
+        { title: searchRegex },
+        { description: searchRegex },
+        { location: searchRegex },
+      ];
+    }
+
+    const skip = (pageNumber - 1) * limitNumber;
+
+    const [events, totalEvents] = await Promise.all([
+      Event.find(filter)
+        .sort({ date: 1 })
+        .skip(skip)
+        .limit(limitNumber)
+        .lean(),
+
+      Event.countDocuments(filter),
+    ]);
+
+    const totalPages = Math.ceil(totalEvents / limitNumber);
 
     return res.status(200).json({
       success: true,
+      pagination: {
+        currentPage: pageNumber,
+        limit: limitNumber,
+        totalEvents,
+        totalPages,
+        hasNextPage: pageNumber < totalPages,
+        hasPreviousPage: pageNumber > 1,
+      },
       count: events.length,
       data: events,
     });
@@ -161,8 +232,25 @@ export const updateEvent = async (req, res) => {
       safeUpdates.date = eventDate;
     }
 
+    if (Object.keys(safeUpdates).length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "No valid fields provided for update",
+      });
+    }
+
+    if (!creatorEmail) {
+      return res.status(400).json({
+        success: false,
+        message: "Creator email is required",
+      });
+    }
+
     const event = await Event.findOneAndUpdate(
-      { _id: id, creatorEmail },
+      {
+        _id: id,
+        creatorEmail: creatorEmail.trim().toLowerCase(),
+      },
       { $set: safeUpdates },
       { new: true, runValidators: true }
     );
@@ -187,7 +275,7 @@ export const updateEvent = async (req, res) => {
   }
 };
 
-// Delete an event
+// Delete an event and its participation records
 export const deleteEvent = async (req, res) => {
   try {
     const { id } = req.params;
@@ -209,7 +297,7 @@ export const deleteEvent = async (req, res) => {
 
     const event = await Event.findOneAndDelete({
       _id: id,
-      creatorEmail,
+      creatorEmail: creatorEmail.trim().toLowerCase(),
     });
 
     if (!event) {
@@ -219,9 +307,12 @@ export const deleteEvent = async (req, res) => {
       });
     }
 
+    // Remove all joins related to this event
+    await EventJoin.deleteMany({ event: id });
+
     return res.status(200).json({
       success: true,
-      message: "Event deleted successfully",
+      message: "Event and its participation records deleted successfully",
     });
   } catch (error) {
     return res.status(500).json({
