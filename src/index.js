@@ -5,6 +5,7 @@ import dotenv from "dotenv";
 import helmet from "helmet";
 import morgan from "morgan";
 import mongoose from "mongoose";
+import authMiddleware from "./middleware/authMiddleware.js";
 
 import connectDB from "./config/db.js";
 import eventRoutes from "./routes/eventRoutes.js";
@@ -31,6 +32,14 @@ app.get("/", (req, res) => {
   res.json({
     success: true,
     message: "Welcome to Togetherly API",
+  });
+});
+
+app.get("/api/auth/me", authMiddleware, (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: "Authentication successful!",
+    user: req.user,
   });
 });
 
