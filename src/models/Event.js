@@ -17,6 +17,7 @@ const eventSchema = new mongoose.Schema(
       maxlength: 2000,
     },
 
+
     category: {
       type: String,
       required: [true, "Event category is required"],
@@ -49,6 +50,11 @@ const eventSchema = new mongoose.Schema(
       required: [true, "Creator email is required"],
       lowercase: true,
       trim: true,
+    },
+    creatorId: {
+      type: String,
+      required: true,
+      index: true,
     },
   },
   {

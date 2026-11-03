@@ -45,10 +45,10 @@ const authMiddleware = async (req, res, next) => {
       audience: authUrl,
     });
 
-    if (!payload.sub) {
+    if (!payload.sub || !payload.email) {
       return res.status(401).json({
         success: false,
-        message: "Invalid token: user ID missing.",
+        message: "Invalid token: user ID or email missing.",
       });
     }
 

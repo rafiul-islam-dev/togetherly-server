@@ -1,4 +1,3 @@
-
 import express from "express";
 
 import {
@@ -7,15 +6,15 @@ import {
   leaveEvent,
 } from "../controllers/joinController.js";
 
+import authMiddleware from "../middleware/authMiddleware.js";
+
 const router = express.Router();
 
-// Get all joined events of a user
+// All participation routes require authentication
+router.use(authMiddleware);
+
 router.get("/", getJoinedEvents);
-
-// Join an event
 router.post("/:id", joinEvent);
-
-// Leave an event
 router.delete("/:id", leaveEvent);
 
 export default router;

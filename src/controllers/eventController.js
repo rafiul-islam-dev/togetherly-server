@@ -1,14 +1,11 @@
-
 import mongoose from "mongoose";
 import Event from "../models/Event.js";
 import EventJoin from "../models/EventJoin.js";
 
-// Escape special characters in search input
-const escapeRegex = (value) => {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-};
+const escapeRegex = (value) =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-// Create a new event
+// Create Event - Login required
 export const createEvent = async (req, res) => {
   try {
     const {
@@ -18,57 +15,49 @@ export const createEvent = async (req, res) => {
       image,
       location,
       date,
-      creatorEmail,
     } = req.body;
 
-    if (
-      !title ||
-      !description ||
-      !category ||
-      !image ||
-      !location ||
-      !date ||
-      !creatorEmail
-    ) {
-      return res.status(400).json({
+    if (!req.user?.id || !req.user?.email) {
+      return res.status(401).json({
         success: false,
-        message: "All event fields are required",
+        message: "Authenticated user information is missing.",
       });
     }
 
     const eventDate = new Date(date);
 
-    if (Number.isNaN(eventDate.getTime()) || eventDate <= new Date()) {
+    if (!date || Number.isNaN(eventDate.getTime()) || eventDate <= new Date()) {
       return res.status(400).json({
         success: false,
-        message: "Please provide a valid future event date",
+        message: "Please provide a valid future event date.",
       });
     }
 
-    const newEvent = await Event.create({
+    const event = await Event.create({
       title,
       description,
       category,
       image,
       location,
       date: eventDate,
-      creatorEmail,
+      creatorId: req.user.id,
+      creatorEmail: req.user.email,
     });
 
-    return res.status(201).json({
+    res.status(201).json({
       success: true,
-      message: "Event created successfully",
-      data: newEvent,
+      message: "Event created successfully.",
+      data: event,
     });
   } catch (error) {
-    return res.status(500).json({
+    res.status(400).json({
       success: false,
-      message: error.message || "Failed to create event",
+      message: error.message,
     });
   }
 };
 
-// Get upcoming events with search, category filter and pagination
+// Get Upcoming Events - Public
 export const getUpcomingEvents = async (req, res) => {
   try {
     const {
@@ -78,19 +67,19 @@ export const getUpcomingEvents = async (req, res) => {
       limit = "6",
     } = req.query;
 
-    const pageNumber = Number(page);
-    const limitNumber = Number(limit);
+    const currentPage = Number(page);
+    const perPage = Number(limit);
 
     if (
-      !Number.isInteger(pageNumber) ||
-      !Number.isInteger(limitNumber) ||
-      pageNumber < 1 ||
-      limitNumber < 1 ||
-      limitNumber > 50
+      !Number.isInteger(currentPage) ||
+      !Number.isInteger(perPage) ||
+      currentPage < 1 ||
+      perPage < 1 ||
+      perPage > 50
     ) {
       return res.status(400).json({
         success: false,
-        message: "Invalid page or limit. Limit must be between 1 and 50.",
+        message: "Invalid page or limit value.",
       });
     }
 
@@ -98,18 +87,15 @@ export const getUpcomingEvents = async (req, res) => {
       date: { $gt: new Date() },
     };
 
-    if (typeof category === "string" && category.trim()) {
+    if (category.trim()) {
       filter.category = {
         $regex: `^${escapeRegex(category.trim())}$`,
         $options: "i",
       };
     }
 
-    if (typeof search === "string" && search.trim()) {
-      const searchRegex = {
-        $regex: escapeRegex(search.trim()),
-        $options: "i",
-      };
+    if (search.trim()) {
+      const searchRegex = new RegExp(escapeRegex(search.trim()), "i");
 
       filter.$or = [
         { title: searchRegex },
@@ -118,50 +104,50 @@ export const getUpcomingEvents = async (req, res) => {
       ];
     }
 
-    const skip = (pageNumber - 1) * limitNumber;
+    const skip = (currentPage - 1) * perPage;
 
     const [events, totalEvents] = await Promise.all([
       Event.find(filter)
         .sort({ date: 1 })
         .skip(skip)
-        .limit(limitNumber)
+        .limit(perPage)
         .lean(),
 
       Event.countDocuments(filter),
     ]);
 
-    const totalPages = Math.ceil(totalEvents / limitNumber);
+    const totalPages = Math.ceil(totalEvents / perPage);
 
-    return res.status(200).json({
+    res.status(200).json({
       success: true,
+      count: events.length,
       pagination: {
-        currentPage: pageNumber,
-        limit: limitNumber,
+        currentPage,
+        limit: perPage,
         totalEvents,
         totalPages,
-        hasNextPage: pageNumber < totalPages,
-        hasPreviousPage: pageNumber > 1,
+        hasNextPage: currentPage < totalPages,
+        hasPreviousPage: currentPage > 1,
       },
-      count: events.length,
       data: events,
     });
   } catch (error) {
-    return res.status(500).json({
+    res.status(500).json({
       success: false,
-      message: error.message || "Failed to fetch events",
+      message: error.message,
     });
   }
 };
 
-// Get a single event
+// Get Single Event - Public
 export const getEventById = async (req, res) => {
   try {
     const { id } = req.params;
 
-    if (!mongoose.isValidObjectId(id)) {
+    if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
-        message: "Invalid event ID",
+        message: "Invalid event ID.",
       });
     }
 
@@ -170,32 +156,31 @@ export const getEventById = async (req, res) => {
     if (!event) {
       return res.status(404).json({
         success: false,
-        message: "Event not found",
+        message: "Event not found.",
       });
     }
 
-    return res.status(200).json({
+    res.status(200).json({
       success: true,
       data: event,
     });
   } catch (error) {
-    return res.status(500).json({
+    res.status(500).json({
       success: false,
-      message: error.message || "Failed to fetch event",
+      message: error.message,
     });
   }
 };
 
-// Update an event
+// Update Event - Owner only
 export const updateEvent = async (req, res) => {
   try {
     const { id } = req.params;
-    const { creatorEmail, ...updates } = req.body;
 
-    if (!mongoose.isValidObjectId(id)) {
+    if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
-        message: "Invalid event ID",
+        message: "Invalid event ID.",
       });
     }
 
@@ -208,16 +193,23 @@ export const updateEvent = async (req, res) => {
       "date",
     ];
 
-    const safeUpdates = {};
+    const updateData = {};
 
     for (const field of allowedFields) {
-      if (updates[field] !== undefined) {
-        safeUpdates[field] = updates[field];
+      if (req.body[field] !== undefined) {
+        updateData[field] = req.body[field];
       }
     }
 
-    if (safeUpdates.date !== undefined) {
-      const eventDate = new Date(safeUpdates.date);
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "No valid fields provided for update.",
+      });
+    }
+
+    if (updateData.date !== undefined) {
+      const eventDate = new Date(updateData.date);
 
       if (
         Number.isNaN(eventDate.getTime()) ||
@@ -225,99 +217,81 @@ export const updateEvent = async (req, res) => {
       ) {
         return res.status(400).json({
           success: false,
-          message: "Please provide a valid future event date",
+          message: "Event date must be in the future.",
         });
       }
 
-      safeUpdates.date = eventDate;
+      updateData.date = eventDate;
     }
 
-    if (Object.keys(safeUpdates).length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "No valid fields provided for update",
-      });
-    }
-
-    if (!creatorEmail) {
-      return res.status(400).json({
-        success: false,
-        message: "Creator email is required",
-      });
-    }
-
-    const event = await Event.findOneAndUpdate(
+    const updatedEvent = await Event.findOneAndUpdate(
       {
         _id: id,
-        creatorEmail: creatorEmail.trim().toLowerCase(),
+        creatorId: req.user.id,
       },
-      { $set: safeUpdates },
-      { new: true, runValidators: true }
+      {
+        $set: updateData,
+      },
+      {
+        new: true,
+        runValidators: true,
+      }
     );
 
-    if (!event) {
+    if (!updatedEvent) {
       return res.status(404).json({
         success: false,
-        message: "Event not found or you are not the creator",
+        message: "Event not found or you are not its owner.",
       });
     }
 
-    return res.status(200).json({
+    res.status(200).json({
       success: true,
-      message: "Event updated successfully",
-      data: event,
+      message: "Event updated successfully.",
+      data: updatedEvent,
     });
   } catch (error) {
-    return res.status(500).json({
+    res.status(400).json({
       success: false,
-      message: error.message || "Failed to update event",
+      message: error.message,
     });
   }
 };
 
-// Delete an event and its participation records
+// Delete Event - Owner only
 export const deleteEvent = async (req, res) => {
   try {
     const { id } = req.params;
-    const { creatorEmail } = req.body;
 
-    if (!mongoose.isValidObjectId(id)) {
+    if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
-        message: "Invalid event ID",
+        message: "Invalid event ID.",
       });
     }
 
-    if (!creatorEmail) {
-      return res.status(400).json({
-        success: false,
-        message: "Creator email is required",
-      });
-    }
-
-    const event = await Event.findOneAndDelete({
+    const deletedEvent = await Event.findOneAndDelete({
       _id: id,
-      creatorEmail: creatorEmail.trim().toLowerCase(),
+      creatorId: req.user.id,
     });
 
-    if (!event) {
+    if (!deletedEvent) {
       return res.status(404).json({
         success: false,
-        message: "Event not found or you are not the creator",
+        message: "Event not found or you are not its owner.",
       });
     }
 
-    // Remove all joins related to this event
     await EventJoin.deleteMany({ event: id });
 
-    return res.status(200).json({
+    res.status(200).json({
       success: true,
-      message: "Event and its participation records deleted successfully",
+      message: "Event and its participation records deleted successfully.",
     });
   } catch (error) {
-    return res.status(500).json({
+    res.status(500).json({
       success: false,
-      message: error.message || "Failed to delete event",
+      message: error.message,
     });
   }
 };
