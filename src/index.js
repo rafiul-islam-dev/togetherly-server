@@ -4,7 +4,10 @@ import cors from "cors";
 import dotenv from "dotenv";
 import helmet from "helmet";
 import morgan from "morgan";
+import mongoose from "mongoose";
+
 import connectDB from "./config/db.js";
+import eventRoutes from "./routes/eventRoutes.js";
 
 dotenv.config();
 
@@ -33,13 +36,16 @@ app.get("/api/health", (req, res) => {
   res.json({
     success: true,
     message: "Togetherly API is running",
-    database:
-      process.env.MONGODB_URI && connectDB
-        ? "Connected"
-        : "Not configured",
+    database: mongoose.connection.readyState === 1
+      ? "Connected"
+      : "Disconnected",
   });
 });
 
+// Event routes
+app.use("/api/events", eventRoutes);
+
+// 404 handler
 app.use((req, res) => {
   res.status(404).json({
     success: false,
@@ -47,6 +53,7 @@ app.use((req, res) => {
   });
 });
 
+// Global error handler
 app.use((error, req, res, next) => {
   console.error(error);
 
@@ -59,11 +66,16 @@ app.use((error, req, res, next) => {
 const PORT = process.env.PORT || 5000;
 
 const startServer = async () => {
-  await connectDB();
+  try {
+    await connectDB();
 
-  app.listen(PORT, () => {
-    console.log(`Togetherly API running on port ${PORT}`);
-  });
+    app.listen(PORT, () => {
+      console.log(`Togetherly API running on port ${PORT}`);
+    });
+  } catch (error) {
+    console.error("Server startup failed:", error.message);
+    process.exit(1);
+  }
 };
 
 startServer();
