@@ -1,3 +1,4 @@
+
 import { notFound, errorHandler } from "./middleware/errorMiddleware.js";
 import express from "express";
 import cors from "cors";
@@ -9,18 +10,30 @@ import authMiddleware from "./middleware/authMiddleware.js";
 
 import connectDB from "./config/db.js";
 import eventRoutes from "./routes/eventRoutes.js";
-
 import joinRoutes from "./routes/joinRoutes.js";
 
 dotenv.config();
 
 const app = express();
 
+const allowedOrigins = [
+  "http://localhost:3000",
+  "https://togetherly-client.vercel.app",
+];
+
 app.use(helmet());
 
 app.use(
   cors({
-    origin: process.env.CLIENT_URL || "http://localhost:3000",
+    origin: (origin, callback) => {
+      // Allow requests without an Origin header
+      // (for example, server-to-server requests).
+      if (!origin || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(new Error("Not allowed by CORS"));
+    },
     credentials: true,
   })
 );
@@ -47,9 +60,10 @@ app.get("/api/health", (req, res) => {
   res.json({
     success: true,
     message: "Togetherly API is running",
-    database: mongoose.connection.readyState === 1
-      ? "Connected"
-      : "Disconnected",
+    database:
+      mongoose.connection.readyState === 1
+        ? "Connected"
+        : "Disconnected",
   });
 });
 
@@ -59,26 +73,11 @@ app.use("/api/events", eventRoutes);
 // Event joining routes
 app.use("/api/joins", joinRoutes);
 
-app.use(notFound);
-app.use(errorHandler);
-
 // 404 handler
-app.use((req, res) => {
-  res.status(404).json({
-    success: false,
-    message: "API route not found",
-  });
-});
+app.use(notFound);
 
 // Global error handler
-app.use((error, req, res, next) => {
-  console.error(error);
-
-  res.status(error.status || 500).json({
-    success: false,
-    message: error.message || "Internal server error",
-  });
-});
+app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
 
